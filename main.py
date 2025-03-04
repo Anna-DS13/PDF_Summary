@@ -1,20 +1,32 @@
 import os
+from fastapi import FastAPI, UploadFile, File
 from dotenv import load_dotenv
 from langchain_community.document_loaders import PyPDFLoader
 from transformers import pipeline
 
 load_dotenv()
 
-def summarize_pdf(file_path):
+app = FastAPI()
+
+# Load summarization models
+summarizer_1 = pipeline("summarization", model="facebook/bart-large-cnn")
+summarizer_2 = pipeline("summarization", model="t5-small")
+
+@app.post("/summarize/")
+async def summarize_pdf(file: UploadFile = File(...)):
+    """Handles PDF uploads and returns a summary."""
+    file_path = f"temp_{file.filename}"
+    
+    # Save the uploaded file
+    with open(file_path, "wb") as buffer:
+        buffer.write(await file.read())
+
+    # Process PDF
     loader = PyPDFLoader(file_path)
     docs = loader.load_and_split()
-
+    
     max_chunk_length = 1024  
     chunks = [doc.page_content[:max_chunk_length] for doc in docs]
-
- 
-    summarizer_1 = pipeline("summarization", model="facebook/bart-large-cnn")
-    summarizer_2 = pipeline("summarization", model="t5-small")  
 
     summaries = []
     for chunk in chunks:
@@ -28,10 +40,10 @@ def summarize_pdf(file_path):
         combined_summary = f"Model 1: {summary_1}\nModel 2: {summary_2}"
         summaries.append(combined_summary)
 
-    return "\n\n".join(summaries)
+    os.remove(file_path)  # Clean up temp file
 
-if __name__ == '__main__':
-    summary = summarize_pdf('DS.pdf')
+    return {"summary": "\n\n".join(summaries)}
 
-    print('Summary:')
-    print(summary)
+@app.get("/")
+def home():
+    return {"message": "Welcome to the PDF Summarization API"}
